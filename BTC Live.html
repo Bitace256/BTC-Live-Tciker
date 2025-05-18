@@ -1,0 +1,287 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>₿itcoin Live Ticker</title>
+    <style>
+        /* Minimales Tailwind-ähnliches CSS für die benötigten Klassen */
+        body {
+            background-color: #000000; /* Body-Hintergrund schwarz */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container {
+            background-color: #000000; /* Container schwarz */
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 36rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 24rem; /* Mindesthöhe für Zentrierung */
+        }
+        .title {
+            font-size: 3rem;
+            font-weight: 700;
+            text-align: center;
+            margin-top: 0.25rem; /* Titel weit oben */
+            margin-bottom: 0.25rem; /* Kleinerer Abstand zu Uhrzeit */
+            background: linear-gradient(to right, #7dd3fc, #1e3a8a, #7c3aed); /* Farbverlauf Hellblau zu Dunkelblau zu Violett */
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent; /* Text transparent für Verlauf */
+            -webkit-text-fill-color: transparent; /* Für Browser-Kompatibilität */
+        }
+        .date {
+            font-size: 1.5rem; /* Unverändert */
+            text-align: center;
+            margin-bottom: 0.5rem; /* Abstand zu Preisen */
+        }
+        .clock {
+            font-size: 3rem; /* Doppelt so groß wie vorher (1.5rem -> 3rem) */
+            text-align: center;
+            margin-bottom: 0.25rem; /* Kleinerer Abstand zu Datum */
+        }
+        .prices {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1; /* Preise zentriert in der Mitte */
+        }
+        .price-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem; /* Abstand zwischen Preis und Prozentänderung */
+        }
+        .space-y-4 > :not(:last-child) {
+            margin-bottom: 1.5rem;
+        }
+        .text-center {
+            text-align: center;
+        }
+        .text-xl {
+            font-size: 2.5rem;
+        }
+        .text-gradient {
+            background: linear-gradient(to right, #a3e635, #15803d, #2dd4bf); /* Farbverlauf Hellgrün zu Dunkelgrün zu Türkis */
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent; /* Text transparent für Verlauf */
+            -webkit-text-fill-color: transparent; /* Für Browser-Kompatibilität */
+            text-shadow: 0 0 8px rgba(45, 212, 191, 0.8); /* Türkis-basierter Glow-Effekt */
+        }
+        .price-animating {
+            animation: slideUp 0.5s ease-in-out;
+        }
+        @keyframes slideUp {
+            0% { transform: translateY(10px); opacity: 0.5; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        .change-indicator {
+            font-size: 1.5rem;
+            animation: fadeOut 2s forwards;
+        }
+        .change-up {
+            color: #a3e635; /* Hellgrün für Anstieg */
+        }
+        .change-down {
+            color: #ef4444; /* Rot für Rückgang */
+        }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            100% { opacity: 0; display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div>
+            <h1 class="title">₿itcoin Live Ticker</h1>
+            <p id="clock" class="clock text-gradient"></p>
+            <p id="date" class="date text-gradient"></p>
+            <div class="prices space-y-4">
+                <div class="price-container">
+                    <p id="btc-usd" class="text-xl text-gradient text-center">$ --</p>
+                    <span id="usd-change" class="change-indicator"></span>
+                </div>
+                <div class="price-container">
+                    <p id="btc-chf" class="text-xl text-gradient text-center">₣ --</p>
+                    <span id="chf-change" class="change-indicator"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let lastUsdPrice = null;
+        let lastChfPrice = null;
+
+        // Funktion für die Zähleranimation (Preise)
+        function animatePrice(element, start, end, currency, duration = 500) {
+            const startTime = performance.now();
+            const step = (timestamp) => {
+                const progress = Math.min((timestamp - startTime) / duration, 1);
+                const current = start + (end - start) * progress;
+                if (currency === 'USD') {
+                    element.textContent = `$ ${current.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                } else {
+                    element.textContent = `₣ ${current.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    // Sicherstellen, dass der Endwert exakt ist
+                    if (currency === 'USD') {
+                        element.textContent = `$ ${end.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    } else {
+                        element.textContent = `₣ ${end.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    }
+                    element.classList.remove('price-animating');
+                }
+            };
+            requestAnimationFrame(step);
+        }
+
+        // Funktion für Datum und Uhrzeit
+        function updateDateTime() {
+            const now = new Date();
+            // Datum formatieren (DD.MM.YYYY)
+            const dateFormatter = new Intl.DateTimeFormat('de-CH', {
+                timeZone: 'Europe/Zurich',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            document.getElementById('date').textContent = dateFormatter.format(now).replace(/\//g, '.');
+
+            // Uhrzeit formatieren (hh:mm:ss AM/PM)
+            const timeFormatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'Europe/Zurich',
+                hour: 'numeric',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+            document.getElementById('clock').textContent = timeFormatter.format(now);
+        }
+
+        // Datum und Uhrzeit initial setzen und jede Sekunde aktualisieren
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+
+        async function fetchBitcoinPrices() {
+            try {
+                // BTC/USD Preis abrufen
+                const usdResponse = await fetch('https://api.coinbase.com/v2/prices/BTC-USD/spot');
+                if (!usdResponse.ok) {
+                    throw new Error(`USD API Fehler: ${usdResponse.status} ${usdResponse.statusText}`);
+                }
+                const usdData = await usdResponse.json();
+                const usdPrice = parseFloat(usdData.data.amount);
+
+                // BTC/CHF Preis abrufen
+                const chfResponse = await fetch('https://api.coinbase.com/v2/prices/BTC-CHF/spot');
+                if (!chfResponse.ok) {
+                    throw new Error(`CHF API Fehler: ${chfResponse.status} ${chfResponse.statusText}`);
+                }
+                const chfData = await chfResponse.json();
+                const chfPrice = parseFloat(chfData.data.amount);
+
+                // Preise anzeigen
+                const usdElement = document.getElementById('btc-usd');
+                const chfElement = document.getElementById('btc-chf');
+                const usdChangeElement = document.getElementById('usd-change');
+                const chfChangeElement = document.getElementById('chf-change');
+
+                // Prüfen, ob sich der USD-Preis geändert hat
+                if (lastUsdPrice !== null && usdPrice !== lastUsdPrice) {
+                    usdElement.classList.add('price-animating');
+                    animatePrice(usdElement, lastUsdPrice, usdPrice, 'USD', 500);
+                    const usdChangePercent = ((usdPrice - lastUsdPrice) / lastUsdPrice * 100).toFixed(2);
+                    usdChangeElement.textContent = `${usdChangePercent > 0 ? '+' : ''}${usdChangePercent}%`;
+                    usdChangeElement.className = 'change-indicator ' + (usdChangePercent >= 0 ? 'change-up' : 'change-down');
+                } else {
+                    usdElement.textContent = `$ ${usdPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    usdChangeElement.textContent = '';
+                    usdChangeElement.className = 'change-indicator';
+                }
+
+                // Prüfen, ob sich der CHF-Preis geändert hat
+                if (lastChfPrice !== null && chfPrice !== lastChfPrice) {
+                    chfElement.classList.add('price-animating');
+                    animatePrice(chfElement, lastChfPrice, chfPrice, 'CHF', 500);
+                    const chfChangePercent = ((chfPrice - lastChfPrice) / lastChfPrice * 100).toFixed(2);
+                    chfChangeElement.textContent = `${chfChangePercent > 0 ? '+' : ''}${chfChangePercent}%`;
+                    chfChangeElement.className = 'change-indicator ' + (chfChangePercent >= 0 ? 'change-up' : 'change-down');
+                } else {
+                    chfElement.textContent = `₣ ${chfPrice.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    chfChangeElement.textContent = '';
+                    chfChangeElement.className = 'change-indicator';
+                }
+
+                // Letzte Preise speichern
+                lastUsdPrice = usdPrice;
+                lastChfPrice = chfPrice;
+            } catch (error) {
+                console.error('Fehler beim Abrufen der Preise:', error.message);
+                const usdElement = document.getElementById('btc-usd');
+                const chfElement = document.getElementById('btc-chf');
+                usdElement.textContent = error.message.includes('USD') ? 'USD Fehler' : 'Fehler';
+                chfElement.textContent = error.message.includes('CHF') ? 'CHF Fehler' : 'Fehler';
+            }
+        }
+
+        // Initialer Abruf
+        fetchBitcoinPrices();
+
+        // Preise alle 5 Sekunden aktualisieren
+        setInterval(fetchBitcoinPrices, 5000);
+    </script>
+</body>
+</html>
